@@ -1,0 +1,2844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BitBench</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#07111f" />
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#eef2f7" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="BitBench" />
+  <meta name="description" content="Engineering utility — number, bit ops, freq/time, dB, rise/BW, Ohm, IEEE 754" />
+  <style>
+    /* ── CSS Variables ──────────────────────────────────────── */
+    :root {
+      /* ── theme: dark ── */
+      --bg:       #07111f;
+      --surface:  #0d1a2d;
+      --surface2: #13233c;
+      --border:   #1b3050;
+      --border2:  #2a4569;
+      --text:     #dde8f7;
+      --text2:    #8aa4c4;
+      --text3:    #5f7da3;   /* faint but readable (labels, hints) */
+      --text4:    #2e4564;   /* decoration only (zero bits, separators) */
+      --blue:     #5b9bff;
+      --blue-bg:  rgba(91,155,255,.12);
+      --blue-bd:  rgba(91,155,255,.30);
+      --green:    #3ce08f;
+      --green-bg: rgba(61,224,143,.15);
+      --green-bd: rgba(61,224,143,.35);
+      --red:      #ff7d7d;
+      --red-bg:   rgba(255,125,125,.12);
+      --red-bd:   rgba(255,125,125,.30);
+      --amber:    #fcc63a;
+      --amber-bg: rgba(252,198,58,.12);
+      --amber-bd: rgba(252,198,58,.30);
+      --focus-ring: rgba(91,155,255,.40);
+      --shadow-1: 0 1px 2px rgba(0,0,0,.35);
+      --shadow-2: 0 6px 20px rgba(0,0,0,.45);
+
+      /* ── semantic states ── */
+      --state-known:       var(--blue);
+      --state-known-bg:    var(--blue-bg);
+      --state-known-bd:    var(--blue-bd);
+      --state-computed:    var(--green);
+      --state-computed-bg: var(--green-bg);
+      --state-computed-bd: var(--green-bd);
+      --ieee-sign: #f87171;
+      --ieee-exp:  #fbbf24;
+      --ieee-mant: #60a5fa;
+
+      /* ── typography ── */
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'JetBrains Mono',
+                   'Fira Code', Menlo, Consolas, monospace;
+
+      /* ── spacing / radius / focus ── */
+      --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px;
+      --r-xs: 5px; --r-sm: 7px; --r-md: 10px; --r-lg: 13px; --r-pill: 999px;
+      --ring: 0 0 0 3px var(--focus-ring);
+      --bit-lbl-w: 28px;   /* bit-row label width; byte strip offsets by it */
+    }
+    html.light {
+      --bg:       #eef2f7;
+      --surface:  #ffffff;
+      --surface2: #f6f8fb;
+      --border:   #dfe6ef;
+      --border2:  #c3cfdd;
+      --text:     #0f172a;
+      --text2:    #44566e;
+      --text3:    #64748b;
+      --text4:    #9aa8ba;
+      --blue:     #2563eb;
+      --blue-bg:  rgba(37,99,235,.08);
+      --blue-bd:  rgba(37,99,235,.30);
+      --green:    #15803d;
+      --green-bg: rgba(21,128,61,.10);
+      --green-bd: rgba(21,128,61,.30);
+      --red:      #dc2626;
+      --red-bg:   rgba(220,38,38,.08);
+      --red-bd:   rgba(220,38,38,.30);
+      --amber:    #b45309;
+      --amber-bg: rgba(180,83,9,.10);
+      --amber-bd: rgba(180,83,9,.30);
+      --focus-ring: rgba(37,99,235,.30);
+      --shadow-1: 0 1px 2px rgba(15,23,42,.06);
+      --shadow-2: 0 6px 20px rgba(15,23,42,.10);
+      --ieee-sign: #dc2626;
+      --ieee-exp:  #b45309;
+      --ieee-mant: #2563eb;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      min-height: 100svh;   /* svh = smallest viewport (toolbars shown);
+                               keeps the footer in view on iOS WebKit,
+                               which mishandles dvh with the bottom bar */
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Fade-in animation ──────────────────────────────────── */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .panel.on { animation: fadeIn 120ms ease both; }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    header {
+      position: sticky; top: 0; z-index: 100;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      box-shadow: var(--shadow-1);
+      height: 52px;
+      padding: 0 20px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .logo {
+      font-weight: 700;
+      font-size: 0.9rem;
+      letter-spacing: 0.01em;
+      color: var(--text);
+      white-space: nowrap;
+    }
+    .logo span { color: var(--blue); }
+    .spacer { flex: 1; }
+
+    /* Scrollable pill nav */
+    .tab-nav {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      min-width: 0;
+    }
+    .tab-scroll-btn {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 28px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text2);
+      font-size: 1rem;
+      line-height: 1;
+      padding: 0 0 2px;
+      cursor: pointer;
+      flex-shrink: 0;
+      user-select: none;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .tab-scroll-btn:hover { border-color: var(--border2); color: var(--text); }
+    .tab-scroll-btn:disabled { opacity: 0.35; cursor: default; }
+    .tab-scroll-btn:disabled:hover { border-color: var(--border); color: var(--text2); }
+    .tab-nav.scrollable .tab-scroll-btn { display: flex; }
+    .tab-scroll-btn:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+    .tab-group {
+      display: flex;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 3px;
+      gap: 2px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+    .tab-group::-webkit-scrollbar { display: none; }
+
+    .tab-btn {
+      background: none;
+      border: none;
+      border-radius: 6px;
+      color: var(--text2);
+      font-size: 0.78rem;
+      font-weight: 500;
+      padding: 6px 14px;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      white-space: nowrap;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.on {
+      background: var(--surface2);
+      color: var(--text);
+      font-weight: 600;
+      box-shadow: inset 0 0 0 1px var(--border2), var(--shadow-1);
+    }
+
+    .theme-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text2);
+      font-size: 0.72rem;
+      padding: 5px 10px;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .theme-btn:hover { border-color: var(--border2); color: var(--text); }
+
+    /* ── Main ───────────────────────────────────────────────── */
+    main {
+      max-width: 820px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 24px 16px;
+      flex: 1 0 auto;
+    }
+    .panel { display: none; }
+    .panel.on { display: block; }
+
+    /* ── Card ───────────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 20px;
+      margin-bottom: 14px;
+    }
+    .sec-label {
+      font-size: 0.66rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--text3);
+      margin-bottom: 12px;
+    }
+
+    /* ── Form controls ──────────────────────────────────────── */
+    .row { display: flex; gap: 8px; align-items: stretch; }
+
+    .field {
+      flex: 1;
+      min-width: 0;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 0.95rem;
+      font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+      padding: 9px 13px;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .field:focus {
+      border-color: var(--blue);
+      box-shadow: var(--ring);
+    }
+    .field::placeholder { color: var(--text3); }
+
+    .sel {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 0.82rem;
+      padding: 9px 8px;
+      outline: none;
+      cursor: pointer;
+      min-width: 64px;
+      flex-shrink: 0;
+    }
+    .sel:focus { border-color: var(--blue); box-shadow: var(--ring); }
+
+    /* ── Number output ──────────────────────────────────────── */
+    .numout {
+      margin-top: 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+      font-size: 0.88rem;
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .out-chunk { display: flex; align-items: center; gap: 5px; }
+    .out-tag {
+      font-size: 0.6rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text3);
+      background: var(--border);
+      border-radius: 3px;
+      padding: 1px 5px;
+    }
+    .out-sep { color: var(--text4); }
+
+    .op-hint {
+      margin-top: 7px;
+      font-size: 0.68rem;
+      font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+      color: var(--text3);
+      line-height: 1.6;
+    }
+    .op-hint b { color: var(--text2); font-weight: 600; }
+
+    .copy-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: var(--r-xs);
+      color: var(--text3);
+      font-size: 0.72rem;
+      padding: 3px 7px;
+      min-width: 24px;
+      min-height: 22px;
+      cursor: pointer;
+      line-height: 1.4;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+    .copy-btn:hover { border-color: var(--border2); color: var(--text); background: var(--surface2); }
+    .copy-btn.copied { border-color: var(--green); color: var(--green); }
+
+    /* ── Bit matrix ─────────────────────────────────────────── */
+    .bits-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 18px;
+    }
+    .bits-head {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      margin-bottom: 14px;
+      gap: 8px;
+    }
+    .bits-head-left { display: flex; gap: 5px; align-items: center; justify-self: start; }
+    .bits-head-title { text-align: center; }
+    .bits-head > :last-child { justify-self: end; }
+
+    .bit-ctrl-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--text2);
+      font-size: 0.68rem;
+      font-weight: 600;
+      padding: 3px 8px;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+    .bit-ctrl-btn:hover { border-color: var(--border2); color: var(--text); }
+    .bit-ctrl-btn.on { border-color: var(--blue); color: var(--blue); background: var(--blue-bg); }
+
+    .popbadge {
+      font-size: 0.68rem;
+      font-family: monospace;
+      background: var(--green-bg);
+      color: var(--green);
+      border: 1px solid var(--green-bd);
+      border-radius: var(--r-xs);
+      padding: 2px 8px;
+    }
+
+    /* Bits scroll wrap with overflow hint */
+    .bits-scroll-wrap {
+      position: relative;
+      overflow: hidden;
+    }
+    .bits-scroll-wrap::after {
+      content: '';
+      position: absolute;
+      right: 0; top: 0; bottom: 0;
+      width: 48px;
+      background: linear-gradient(to right, transparent, var(--surface));
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    .bits-scroll-wrap.overflows::after { opacity: 1; }
+
+    .bits-scroll {
+      overflow-x: auto;
+      overflow-y: visible;
+      padding-bottom: 2px;
+    }
+
+    #bitMatrix {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      align-items: center;
+    }
+    .bit-row {
+      display: flex;
+      gap: 3px;
+      align-items: center;
+    }
+    .row-lbl {
+      font-size: 0.6rem;
+      font-family: monospace;
+      color: var(--text3);
+      width: var(--bit-lbl-w);
+      text-align: right;
+      padding-right: 6px;
+      flex-shrink: 0;
+    }
+    .bit {
+      width: 23px;
+      height: 23px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--r-xs);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      font-family: monospace;
+      font-size: 0.72rem;
+      color: var(--text4);
+      cursor: pointer;
+      position: relative;
+      user-select: none;
+      transition: border-color 0.1s, background 0.1s;
+    }
+    .bit:hover { border-color: var(--border2); background: var(--border); color: var(--text2); }
+    .bit.on {
+      background: var(--green-bg);
+      border-color: var(--green-bd);
+      color: var(--green);
+      font-weight: 700;
+    }
+    .bit.on:hover { background: rgba(61,224,143,.24); border-color: var(--green); }
+    .ngap { width: 5px; flex-shrink: 0; }
+    .bgap { width: 15px; flex-shrink: 0; position: relative; }
+    .bgap::after {
+      content: '';
+      position: absolute;
+      left: 50%; top: 12%; bottom: 12%;
+      width: 1px;
+      background: var(--border);
+    }
+    .bit:hover::after {
+      content: attr(data-t);
+      position: absolute;
+      bottom: calc(100% + 5px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border2);
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-size: 0.6rem;
+      white-space: nowrap;
+      z-index: 20;
+      pointer-events: none;
+    }
+
+    /* ── Byte strip ─────────────────────────────────────────── */
+    .byte-strip {
+      display: flex;
+      gap: 5px;
+      margin-top: 12px;
+      justify-content: center;
+      overflow-x: auto;
+      padding-bottom: 2px;
+      /* Offset by the row-label width so the strip centers under the
+         bits (which are pushed right of center by their labels). */
+      padding-left: var(--bit-lbl-w);
+    }
+    .byte-cell {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 5px 8px;
+      text-align: center;
+      flex: 0 0 52px;
+    }
+    .byte-cell-lbl {
+      font-size: 0.56rem;
+      color: var(--text3);
+      font-family: monospace;
+      margin-bottom: 2px;
+    }
+    .byte-cell-val {
+      font-family: 'SF Mono', 'Cascadia Code', monospace;
+      font-size: 0.79rem;
+      color: var(--text);
+    }
+
+    /* ── Field map ──────────────────────────────────────────── */
+    .fieldmap-section {
+      margin-top: 14px;
+      border-top: 1px solid var(--border);
+      padding-top: 12px;
+    }
+    .fieldmap-section .sec-label { margin-bottom: 8px; }
+    .fieldmap-ta {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: 'SF Mono','Cascadia Code','Fira Code',monospace;
+      font-size: 0.8rem;
+      padding: 8px 10px;
+      resize: vertical;
+      outline: none;
+    }
+    .fieldmap-ta:focus { border-color: var(--blue); }
+    .fieldmap-ta::placeholder { color: var(--text3); }
+    .fieldmap-hint {
+      font-size: 0.63rem;
+      color: var(--text3);
+      margin-top: 5px;
+      font-family: monospace;
+    }
+    .fieldmap-values {
+      margin-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .fmv-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: monospace;
+      font-size: 0.78rem;
+      padding: 5px 8px;
+      border-radius: 6px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+    }
+    .fmv-name {
+      font-weight: 700;
+      min-width: 70px;
+    }
+    .fmv-range { color: var(--text3); font-size: 0.7rem; }
+    .fmv-hex   { color: var(--text2); }
+    .fmv-dec   { color: var(--text); }
+
+    /* ── Freq ↔ Time ────────────────────────────────────────── */
+    .preset-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-bottom: 12px;
+    }
+    .preset-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--r-pill);
+      color: var(--text2);
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 3px 10px;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+      white-space: nowrap;
+    }
+    .preset-btn:hover { border-color: var(--blue); color: var(--blue); background: var(--blue-bg); }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 36px 1fr;
+      align-items: start;
+    }
+    .arrow-mid {
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding-top: 34px;
+      color: var(--text3);
+      font-size: 1rem;
+    }
+    .side-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+      color: var(--text2);
+      margin-bottom: 9px;
+    }
+    .unit-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      margin-top: 11px;
+    }
+    .unit-cell {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      padding: 8px 10px;
+      min-width: 0;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .unit-cell:hover { border-color: var(--border2); }
+    .unit-cell.hi { border-color: var(--blue-bd); background: var(--blue-bg); }
+    .unit-cell.flash {
+      border-color: var(--green) !important;
+      background: var(--green-bg) !important;
+      transition: border-color 0s, background 0s;
+    }
+    .unit-cell-label {
+      font-size: 0.59rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--text3);
+      margin-bottom: 3px;
+    }
+    .unit-cell.hi .unit-cell-label { color: var(--blue); }
+    .unit-cell-val {
+      font-family: 'SF Mono', 'Cascadia Code', monospace;
+      font-size: 0.78rem;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .unit-cell.hi .unit-cell-val { color: var(--blue); }
+
+    .derived-row {
+      margin-top: 10px;
+      font-size: 0.78rem;
+      color: var(--text2);
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      font-family: monospace;
+      padding: 6px 2px 0;
+      border-top: 1px solid var(--border);
+    }
+    .derived-row span { color: var(--text); }
+
+    /* ── dB Tab ─────────────────────────────────────────────── */
+    .mode-pills {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 14px;
+    }
+    .mode-pill {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--r-pill);
+      color: var(--text2);
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 4px 14px;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+    .mode-pill:hover { border-color: var(--border2); color: var(--text); }
+    .mode-pill.on { border-color: var(--blue-bd); color: var(--blue); background: var(--blue-bg); }
+
+    .ref-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-family: monospace;
+      font-size: 0.78rem;
+    }
+    .ref-table th {
+      font-size: 0.6rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text3);
+      text-align: left;
+      padding: 5px 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .ref-table td {
+      padding: 5px 8px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+    }
+    .ref-table tr { cursor: pointer; }
+    .ref-table tr:hover td { background: var(--surface2); }
+    .ref-table tr:last-child td { border-bottom: none; }
+
+    /* ── Rise/BW Tab ────────────────────────────────────────── */
+    .result-models {
+      margin-top: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .model-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .model-name {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--text2);
+      min-width: 120px;
+    }
+    .model-formula {
+      font-family: monospace;
+      font-size: 0.72rem;
+      color: var(--text3);
+      flex: 1;
+    }
+    .model-val {
+      font-family: monospace;
+      font-size: 0.85rem;
+      color: var(--blue);
+      font-weight: 700;
+    }
+
+    /* ── Ohm's Law Tab ──────────────────────────────────────── */
+    .ohm-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .ohm-field-group { display: flex; flex-direction: column; gap: 5px; }
+    .ohm-field-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: var(--text2);
+      letter-spacing: 0.05em;
+    }
+
+    .ohm-result {
+      margin-top: 4px;
+    }
+    .ohm-results-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+    .orc {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      text-align: center;
+    }
+    .orc.known    { border-color: var(--state-known-bd);    background: var(--state-known-bg); }
+    .orc.computed { border-color: var(--state-computed-bd); background: var(--state-computed-bg); }
+    .orc-label {
+      font-size: 0.6rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text3);
+      margin-bottom: 4px;
+    }
+    .orc.known .orc-label { color: var(--state-known); }
+    .orc.computed .orc-label { color: var(--state-computed); }
+    .orc-val {
+      font-family: monospace;
+      font-size: 0.82rem;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .orc.known .orc-val { color: var(--state-known); }
+    .orc.computed .orc-val { color: var(--state-computed); }
+    .ohm-placeholder {
+      color: var(--text3);
+      font-size: 0.8rem;
+      text-align: center;
+      padding: 12px;
+    }
+
+    /* ── IEEE 754 Tab ───────────────────────────────────────── */
+    .field-legend {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    .legend-pill {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: var(--r-pill);
+    }
+    .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .legend-sign { background: var(--red-bg);   border: 1px solid var(--red-bd);   color: var(--ieee-sign); }
+    .legend-exp  { background: var(--amber-bg); border: 1px solid var(--amber-bd); color: var(--ieee-exp); }
+    .legend-mant { background: var(--blue-bg);  border: 1px solid var(--blue-bd);  color: var(--ieee-mant); }
+    .legend-sign .legend-dot { background: var(--ieee-sign); }
+    .legend-exp  .legend-dot { background: var(--ieee-exp); }
+    .legend-mant .legend-dot { background: var(--ieee-mant); }
+
+    .ieee-info {
+      margin-top: 14px;
+    }
+    .ieee-info table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: monospace;
+      font-size: 0.8rem;
+    }
+    .ieee-info td {
+      padding: 5px 8px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    .ieee-info td:first-child {
+      color: var(--text3);
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      width: 80px;
+      white-space: nowrap;
+    }
+    .ieee-info tr:last-child td { border-bottom: none; }
+    .ieee-val { color: var(--text); }
+    .ieee-sub { color: var(--text2); font-size: 0.72rem; margin-top: 2px; }
+
+    /* category badges */
+    .cat-badge {
+      display: inline-block;
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 1px 8px;
+      border-radius: 4px;
+      letter-spacing: 0.04em;
+    }
+    .cat-normal   { background: var(--blue-bg);  color: var(--blue);  border: 1px solid var(--blue-bd); }
+    .cat-denormal { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-bd); }
+    .cat-zero     { background: var(--surface2); color: var(--text2); border: 1px solid var(--border); }
+    .cat-inf      { background: var(--red-bg);   color: var(--red);   border: 1px solid var(--red-bd); }
+    .cat-nan      { background: var(--red-bg);   color: var(--red);   border: 1px solid var(--red-bd); }
+
+    /* ── Typography: one mono stack + tabular figures ───────── */
+    /* Late in the sheet so it wins over earlier per-component
+       font-family declarations of equal specificity. */
+    .field, .numout, .unit-cell-val, .bit, .row-lbl,
+    .byte-cell-lbl, .byte-cell-val, .fieldmap-ta, .fieldmap-hint,
+    .fmv-row, .ref-table, .op-hint, .orc-val, .model-val,
+    .model-formula, .ieee-info table, .popbadge, .derived-row {
+      font-family: var(--font-mono);
+      font-feature-settings: "tnum" 1, "zero" 1;
+      font-variant-numeric: tabular-nums slashed-zero;
+    }
+
+    /* ── Focus visibility (keyboard users) ──────────────────── */
+    .tab-btn:focus-visible, .mode-pill:focus-visible,
+    .preset-btn:focus-visible, .bit-ctrl-btn:focus-visible,
+    .copy-btn:focus-visible,
+    .theme-btn:focus-visible, .bit:focus-visible,
+    .unit-cell:focus-visible {
+      outline: 2px solid var(--blue);
+      outline-offset: 2px;
+    }
+
+    /* ── Guide / Help ───────────────────────────────────────── */
+    .guide-intro {
+      font-size: 0.85rem;
+      line-height: 1.6;
+      color: var(--text2);
+    }
+    .guide-card { padding: 16px 20px; }
+    .guide-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .guide-num {
+      flex-shrink: 0;
+      width: 24px; height: 24px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: var(--r-xs);
+      background: var(--blue-bg);
+      border: 1px solid var(--blue-bd);
+      color: var(--blue);
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+    .guide-title {
+      font-size: 0.98rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .guide-go {
+      margin-left: auto;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      color: var(--text2);
+      font-size: 0.74rem;
+      font-weight: 600;
+      padding: 4px 12px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+    .guide-go:hover { border-color: var(--blue-bd); color: var(--blue); background: var(--blue-bg); }
+    .guide-go:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+    .guide-best {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--green);
+      margin-bottom: 8px;
+    }
+    .guide-desc {
+      font-size: 0.84rem;
+      line-height: 1.6;
+      color: var(--text2);
+      margin-bottom: 12px;
+    }
+    .guide-desc b { color: var(--text); font-weight: 600; }
+    .guide-sub {
+      font-size: 0.64rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text3);
+      margin: 12px 0 6px;
+    }
+    .guide-ref {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+    }
+    .guide-ref td {
+      padding: 5px 8px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    .guide-ref tr:last-child td { border-bottom: none; }
+    .guide-ref td:first-child {
+      color: var(--text3);
+      font-weight: 600;
+      white-space: nowrap;
+      width: 96px;
+    }
+    .guide-ex {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .guide-ex li {
+      font-size: 0.82rem;
+      line-height: 1.5;
+      color: var(--text2);
+      padding-left: 14px;
+      position: relative;
+    }
+    .guide-ex li::before {
+      content: '›';
+      position: absolute;
+      left: 0;
+      color: var(--text3);
+    }
+    .guide-card code, .guide-mono {
+      font-family: var(--font-mono);
+      font-feature-settings: "tnum" 1, "zero" 1;
+      font-variant-numeric: tabular-nums slashed-zero;
+    }
+    .guide-card code {
+      font-size: 0.79rem;
+      color: var(--blue);
+      background: var(--blue-bg);
+      border: 1px solid var(--blue-bd);
+      border-radius: var(--r-xs);
+      padding: 1px 5px;
+    }
+    .kbd {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--text);
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-bottom-width: 2px;
+      border-radius: var(--r-xs);
+      padding: 0 6px;
+      line-height: 1.5;
+    }
+
+    /* ── Footer ─────────────────────────────────────────────── */
+    .app-footer {
+      flex: none;
+      width: 100%;
+      max-width: 820px;
+      margin: 0 auto;
+      padding: 18px 16px 28px;
+      text-align: center;
+      font-size: 0.72rem;
+      color: var(--text3);
+      border-top: 1px solid var(--border);
+    }
+    .app-footer span { color: var(--text2); font-weight: 600; }
+    .app-footer .app-ver {
+      font-family: var(--font-mono);
+      font-weight: 500;
+      font-size: 0.68rem;
+      color: var(--text3);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-pill);
+      padding: 1px 8px;
+    }
+
+    /* ── Responsive ─────────────────────────────────────────── */
+    @media (max-width: 600px) {
+      /* Header → two rows: brand + theme on top, full-width tab bar below */
+      header {
+        height: auto;
+        flex-wrap: wrap;
+        padding: 8px 12px;
+        row-gap: 8px;
+        column-gap: 8px;
+      }
+      header .spacer { display: none; }
+      .logo { order: 1; font-size: 0.85rem; }
+      .theme-btn { order: 2; margin-left: auto; }
+      .tab-nav { order: 3; width: 100%; flex-basis: 100%; }
+      .tab-group { flex: 1; min-width: 0; }
+      .tab-btn { padding: 6px 11px; font-size: 0.74rem; }
+
+      /* Tighter page + card chrome */
+      main { padding: 14px 12px; }
+      .card { padding: 14px 14px; margin-bottom: 12px; }
+      .bits-wrap { padding: 14px 12px; }
+
+      /* Stacked converters */
+      .two-col { grid-template-columns: 1fr; row-gap: 16px; }
+      .arrow-mid { display: none; }
+      .ohm-grid { grid-template-columns: 1fr; }
+
+      /* Conversion grids → 2 columns so values stay legible */
+      .unit-grid { grid-template-columns: repeat(2, 1fr) !important; }
+      #memGrid   { grid-template-columns: repeat(2, 1fr) !important; }
+      .ohm-results-grid { grid-template-columns: repeat(2, 1fr); }
+
+      /* Inputs at 16px prevent iOS auto-zoom on focus */
+      .field { font-size: 16px; }
+
+      /* 64-bit grid: shrink cells + inter-cell gap so all 16 fit */
+      body { --bit-lbl-w: 20px; }
+      .bit-row { gap: 2px; }
+      .row-lbl { font-size: 0.54rem; padding-right: 4px; }
+      .bit { width: 17px; height: 19px; font-size: 0.62rem; }
+      .ngap { width: 3px; }
+      .bgap { width: 9px; }
+      .byte-strip { gap: 4px; }
+      .byte-cell { flex: 0 0 40px; padding: 5px 4px; }
+
+      /* Guide */
+      .guide-card { padding: 14px 14px; }
+      .guide-ref td:first-child { width: 78px; }
+    }
+
+    /* Phones (incl. iPhone ~393px): fit all 16 bits with no scroll */
+    @media (max-width: 430px) {
+      body { --bit-lbl-w: 16px; }
+      .bit-row { gap: 2px; }
+      .row-lbl { font-size: 0.52rem; padding-right: 3px; }
+      .bit { width: 15px; height: 18px; font-size: 0.58rem; }
+      .ngap { width: 2px; }
+      .bgap { width: 6px; }
+      .bgap::after { top: 18%; bottom: 18%; }
+
+      /* Byte strip: fit all 8 cells (+ label offset) without scrolling */
+      .byte-strip { gap: 3px; }
+      .byte-cell { flex: 0 0 35px; padding: 4px 3px; }
+      .byte-cell-lbl { font-size: 0.5rem; }
+      .byte-cell-val { font-size: 0.7rem; }
+    }
+
+    @media (max-width: 340px) {
+      .bit { width: 14px; height: 17px; font-size: 0.55rem; }
+      .tab-btn { padding: 6px 9px; font-size: 0.72rem; }
+      .byte-strip { gap: 2px; }
+      .byte-cell { flex: 0 0 29px; }
+      .byte-cell-val { font-size: 0.66rem; }
+    }
+
+    /* Laptops/desktops: scale the UI up ~20% (≈125% zoom feel) so it
+       reads comfortably without manually zooming the browser. `zoom`
+       is a render-time scale and does NOT shift media-query widths, so
+       the mobile breakpoints above never trigger from it. */
+    @media (min-width: 1024px) {
+      /* zoom scales the body's height too, so a 100svh min-height would
+         render at 115svh and push the footer below the fold. Divide by
+         the zoom factor so the zoomed body fills exactly one viewport. */
+      body { zoom: 1.15; min-height: calc(100svh / 1.15); }
+    }
+
+    /* Installed PWA: fill the whole window — no empty gutter/open area
+       around the app content. The header, main, and footer all stretch
+       edge-to-edge (content stays comfortably padded). */
+    @media all and (display-mode: standalone),
+           all and (display-mode: fullscreen),
+           all and (display-mode: window-controls-overlay) {
+      main, .app-footer { max-width: none; }
+      main { padding-left: 24px; padding-right: 24px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Bit<span>Bench</span></div>
+  <div class="spacer"></div>
+  <div class="tab-nav" id="tabNav">
+    <button class="tab-scroll-btn" id="tabLeft" onclick="scrollTabs(-1)" aria-label="Scroll tabs left">‹</button>
+    <nav class="tab-group" id="tabGroup">
+      <button class="tab-btn on"  data-tab="num"   onclick="goTab('num')">Number</button>
+      <button class="tab-btn"     data-tab="mem"   onclick="goTab('mem')">Memory</button>
+      <button class="tab-btn"     data-tab="freq"  onclick="goTab('freq')">Freq↔Time</button>
+      <button class="tab-btn"     data-tab="db"    onclick="goTab('db')">dB</button>
+      <button class="tab-btn"     data-tab="rise"  onclick="goTab('rise')">Rise/BW</button>
+      <button class="tab-btn"     data-tab="ohm"   onclick="goTab('ohm')">Ohm</button>
+      <button class="tab-btn"     data-tab="ieee"  onclick="goTab('ieee')">IEEE 754</button>
+      <button class="tab-btn"     data-tab="guide" onclick="goTab('guide')">Guide</button>
+    </nav>
+    <button class="tab-scroll-btn" id="tabRight" onclick="scrollTabs(1)" aria-label="Scroll tabs right">›</button>
+  </div>
+  <div class="spacer"></div>
+  <button class="theme-btn"   id="themeBtn"   onclick="toggleTheme()">☾</button>
+</header>
+
+<main>
+
+  <!-- ═══════════════ NUMBER CONVERTER ═══════════════════════════ -->
+  <div class="panel on" id="p-num">
+
+    <div class="card">
+      <div class="sec-label">Expression</div>
+      <div class="row">
+        <input class="field" id="numIn" type="text" spellcheck="false" autocomplete="off"
+          placeholder="255 · 0xFF · 0b1010 · 0o17 · (0x10+4)<<2 · ~0xF · rol(1,4)" />
+      </div>
+      <div class="numout" id="numOut">
+        <span style="color:var(--text3)">result appears here</span>
+      </div>
+    </div>
+
+    <div class="bits-wrap">
+      <div class="bits-head">
+        <div class="bits-head-left">
+          <button class="bit-ctrl-btn on" id="endianBtn" onclick="toggleEndian()">BE</button>
+          <button class="bit-ctrl-btn" id="fieldsBtn" onclick="toggleFieldMap()">Fields</button>
+        </div>
+        <div class="bits-head-title">
+          <span class="sec-label" style="margin:0">64-bit &nbsp;·&nbsp; MSB → LSB</span>
+        </div>
+        <div class="popbadge" id="pcBadge" style="display:none">0 set</div>
+      </div>
+      <div class="bits-scroll-wrap" id="bitsScrollWrap">
+        <div class="bits-scroll">
+          <div id="bitMatrix"></div>
+        </div>
+      </div>
+      <div class="byte-strip" id="byteRow" style="display:none"></div>
+
+      <!-- Field Map Section -->
+      <div class="fieldmap-section" id="fieldmapSection" style="display:none">
+        <div class="sec-label">Named Bit Fields</div>
+        <textarea class="fieldmap-ta" id="fieldMapTA" rows="4"
+          placeholder="31:16 ADDR&#10;15:8  FLAGS&#10;7:0   DATA&#10;(or: 31 SIGN)"
+          oninput="parseFieldMap()"></textarea>
+        <div class="fieldmap-hint">Format: hi:lo NAME &nbsp;or&nbsp; bit NAME</div>
+        <div class="fieldmap-values" id="fieldmapValues"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══════════════ FREQ ↔ TIME ═════════════════════════════════ -->
+  <div class="panel" id="p-freq">
+    <div class="card">
+      <div class="sec-label">Frequency ↔ Period</div>
+
+      <!-- Clock presets -->
+      <div class="preset-row" id="freqPresets"></div>
+
+      <div class="two-col">
+        <div>
+          <div class="side-label">Frequency</div>
+          <div class="row">
+            <input class="field" id="fVal" type="number" placeholder="100" oninput="fromFreq()" />
+            <select class="sel" id="fUnit" onchange="fromFreq()">
+              <option value="1e12">THz</option>
+              <option value="1e9">GHz</option>
+              <option value="1e6" selected>MHz</option>
+              <option value="1e3">kHz</option>
+              <option value="1">Hz</option>
+              <option value="1e-3">mHz</option>
+            </select>
+          </div>
+          <div class="unit-grid" id="fGrid"></div>
+        </div>
+
+        <div class="arrow-mid">⇄</div>
+
+        <div>
+          <div class="side-label">Period</div>
+          <div class="row">
+            <input class="field" id="pVal" type="number" placeholder="10" oninput="fromPeriod()" />
+            <select class="sel" id="pUnit" onchange="fromPeriod()">
+              <option value="1">s</option>
+              <option value="1e-3">ms</option>
+              <option value="1e-6">µs</option>
+              <option value="1e-9" selected>ns</option>
+              <option value="1e-12">ps</option>
+              <option value="1e-15">fs</option>
+            </select>
+          </div>
+          <div class="unit-grid" id="pGrid"></div>
+        </div>
+      </div>
+
+      <div class="derived-row" id="derivedRow" style="display:none">
+        <span id="derivedHalf"></span>
+        <span id="derivedQuarter"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ dB ↔ LINEAR ═════════════════════════════════ -->
+  <div class="panel" id="p-db">
+    <div class="card">
+      <div class="sec-label">dB ↔ Linear Converter</div>
+
+      <div class="mode-pills">
+        <button class="mode-pill on" id="dbPowBtn"  onclick="setDbMode('power')">Power (×10)</button>
+        <button class="mode-pill"    id="dbVoltBtn" onclick="setDbMode('voltage')">Voltage (×20)</button>
+      </div>
+
+      <div class="two-col">
+        <div>
+          <div class="side-label" id="dbSideLabel">dBm (Power)</div>
+          <div class="row">
+            <input class="field" id="dbVal" type="number" placeholder="0" oninput="fromDb()" />
+            <span class="sel" style="display:flex;align-items:center;justify-content:center;min-width:52px;font-size:0.8rem;color:var(--text2)" id="dbUnitLabel">dBm</span>
+          </div>
+          <div class="unit-grid" id="dbGrid"></div>
+        </div>
+
+        <div class="arrow-mid">⇄</div>
+
+        <div>
+          <div class="side-label" id="linSideLabel">Linear (W)</div>
+          <div class="row">
+            <input class="field" id="linVal" type="number" placeholder="1e-3" oninput="fromLin()" />
+            <select class="sel" id="linUnit" onchange="fromLin()">
+              <option value="1e3">kW</option>
+              <option value="1">W</option>
+              <option value="1e-3" selected>mW</option>
+              <option value="1e-6">µW</option>
+              <option value="1e-9">nW</option>
+              <option value="1e-12">pW</option>
+            </select>
+          </div>
+          <div class="unit-grid" id="linGrid"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="sec-label" id="refTableLabel">Common Power References</div>
+      <table class="ref-table" id="refTable"></table>
+    </div>
+  </div>
+
+  <!-- ═══════════════ RISE TIME ↔ BANDWIDTH ════════════════════════ -->
+  <div class="panel" id="p-rise">
+    <div class="card">
+      <div class="sec-label">Rise Time ↔ Bandwidth</div>
+
+      <div class="two-col">
+        <div>
+          <div class="side-label">Rise Time</div>
+          <div class="row">
+            <input class="field" id="riseVal" type="number" placeholder="10" oninput="fromRise()" />
+            <select class="sel" id="riseUnit" onchange="fromRise()">
+              <option value="1">s</option>
+              <option value="1e-3">ms</option>
+              <option value="1e-6">µs</option>
+              <option value="1e-9" selected>ns</option>
+              <option value="1e-12">ps</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="arrow-mid">⇄</div>
+
+        <div>
+          <div class="side-label">Bandwidth</div>
+          <div class="row">
+            <input class="field" id="bwVal" type="number" placeholder="35" oninput="fromBw()" />
+            <select class="sel" id="bwUnit" onchange="fromBw()">
+              <option value="1e12">THz</option>
+              <option value="1e9">GHz</option>
+              <option value="1e6" selected>MHz</option>
+              <option value="1e3">kHz</option>
+              <option value="1">Hz</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="result-models" id="riseModels">
+        <div class="model-card">
+          <div class="model-name">Gaussian</div>
+          <div class="model-formula">BW = 0.35 / t<sub>r</sub></div>
+          <div class="model-val" id="riseGauss">—</div>
+        </div>
+        <div class="model-card">
+          <div class="model-name">Single-pole RC</div>
+          <div class="model-formula">BW = 0.22 / t<sub>r</sub></div>
+          <div class="model-val" id="riseRC">—</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ OHM'S LAW ════════════════════════════════════ -->
+  <div class="panel" id="p-ohm">
+    <div class="card">
+      <div class="sec-label">Enter any 2 of V, I, R, P</div>
+
+      <div class="ohm-grid">
+        <div class="ohm-field-group">
+          <div class="ohm-field-label">V — Voltage</div>
+          <div class="row">
+            <input class="field" id="oV" type="number" placeholder="" oninput="ohmInput('V')" />
+            <select class="sel" id="oVu" onchange="ohmInput('V')">
+              <option value="1e3">kV</option>
+              <option value="1" selected>V</option>
+              <option value="1e-3">mV</option>
+              <option value="1e-6">µV</option>
+            </select>
+          </div>
+        </div>
+        <div class="ohm-field-group">
+          <div class="ohm-field-label">I — Current</div>
+          <div class="row">
+            <input class="field" id="oI" type="number" placeholder="" oninput="ohmInput('I')" />
+            <select class="sel" id="oIu" onchange="ohmInput('I')">
+              <option value="1">A</option>
+              <option value="1e-3" selected>mA</option>
+              <option value="1e-6">µA</option>
+              <option value="1e-9">nA</option>
+            </select>
+          </div>
+        </div>
+        <div class="ohm-field-group">
+          <div class="ohm-field-label">R — Resistance</div>
+          <div class="row">
+            <input class="field" id="oR" type="number" placeholder="" oninput="ohmInput('R')" />
+            <select class="sel" id="oRu" onchange="ohmInput('R')">
+              <option value="1e6">MΩ</option>
+              <option value="1e3">kΩ</option>
+              <option value="1" selected>Ω</option>
+              <option value="1e-3">mΩ</option>
+            </select>
+          </div>
+        </div>
+        <div class="ohm-field-group">
+          <div class="ohm-field-label">P — Power</div>
+          <div class="row">
+            <input class="field" id="oP" type="number" placeholder="" oninput="ohmInput('P')" />
+            <select class="sel" id="oPu" onchange="ohmInput('P')">
+              <option value="1e3">kW</option>
+              <option value="1">W</option>
+              <option value="1e-3" selected>mW</option>
+              <option value="1e-6">µW</option>
+              <option value="1e-9">nW</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="ohm-result" id="ohmResult">
+        <div class="ohm-placeholder">Enter any 2 values above to compute the other 2</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ IEEE 754 ══════════════════════════════════════ -->
+  <div class="panel" id="p-ieee">
+    <div class="card">
+      <div class="sec-label">IEEE 754 Floating Point Visualizer</div>
+
+      <div class="mode-pills">
+        <button class="mode-pill on" id="ieeef32Btn" onclick="setIeeeMode('f32')">Float32</button>
+        <button class="mode-pill"    id="ieeef64Btn" onclick="setIeeeMode('f64')">Double64</button>
+      </div>
+
+      <div class="row">
+        <input class="field" id="ieeeIn" type="text" spellcheck="false" autocomplete="off"
+          placeholder="3.14159  ·  -1.5  ·  1e-5  ·  NaN  ·  Infinity  ·  0x3F800000" />
+      </div>
+
+      <div class="field-legend" style="margin-top:12px">
+        <div class="legend-pill legend-sign">
+          <div class="legend-dot"></div>
+          <span>Sign</span>
+        </div>
+        <div class="legend-pill legend-exp">
+          <div class="legend-dot"></div>
+          <span>Exponent</span>
+        </div>
+        <div class="legend-pill legend-mant">
+          <div class="legend-dot"></div>
+          <span>Mantissa</span>
+        </div>
+      </div>
+
+      <div class="bits-scroll-wrap" id="ieeeBitsWrap">
+        <div class="bits-scroll">
+          <div id="ieeeBitMatrix"></div>
+        </div>
+      </div>
+
+      <div class="ieee-info" id="ieeeInfo"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ MEMORY / DATA SIZE ════════════════════════════ -->
+  <div class="panel" id="p-mem">
+    <div class="card">
+      <div class="sec-label">Memory / Data Size</div>
+
+      <div class="mode-pills">
+        <button class="mode-pill on" id="memBinBtn" onclick="setMemMode('binary')">Binary (1024)</button>
+        <button class="mode-pill"    id="memDecBtn" onclick="setMemMode('decimal')">Decimal (1000)</button>
+      </div>
+
+      <div class="row">
+        <input class="field" id="memIn" type="text" spellcheck="false" autocomplete="off"
+          placeholder="4096 · 0x100000 · 1.5" oninput="memConvert()" />
+        <select class="sel" id="memUnit" onchange="memConvert()"></select>
+      </div>
+      <div class="op-hint">
+        <b>Input:</b> decimal or hex (0x…), interpreted in the selected unit
+      </div>
+
+      <div class="numout" id="memOut">
+        <span style="color:var(--text3)">result appears here</span>
+      </div>
+
+      <div class="unit-grid" id="memGrid" style="grid-template-columns:repeat(3,1fr)"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ GUIDE / HELP ══════════════════════════════════ -->
+  <div class="panel" id="p-guide">
+    <div class="card">
+      <div class="sec-label">How to use BitBench</div>
+      <p class="guide-intro">
+        Seven tools for embedded, RF, and hardware work. Pick a tab below to jump to it,
+        or press <span class="kbd">1</span>–<span class="kbd">7</span> to switch.
+        Click any <span class="guide-mono">monospace</span> value cell to copy it.
+      </p>
+    </div>
+
+    <!-- Number -->
+    <div class="card guide-card">
+      <div class="guide-head">
+        <span class="guide-num">1</span>
+        <span class="guide-title">Number</span>
+        <button class="guide-go" onclick="goTab('num')">Open ›</button>
+      </div>
+      <div class="guide-best">Best for: decoding registers, masks, and bitwise math in any base.</div>
+      <p class="guide-desc">
+        Type an expression in decimal, hex, binary, or octal — it evaluates live and shows
+        the result as HEX · DEC · OCT · signed i64, plus a clickable 64-bit grid. Toggle
+        <b>Fields</b> to name bit ranges and decode a register layout.
+      </p>
+      <div class="guide-sub">Operators</div>
+      <table class="guide-ref">
+        <tr><td>Arithmetic</td><td class="guide-mono">+ &nbsp; - &nbsp; * &nbsp; / &nbsp; % &nbsp; **</td></tr>
+        <tr><td>Bitwise</td><td class="guide-mono">&amp; &nbsp; | &nbsp; ^ &nbsp; ~ &nbsp; &lt;&lt; &nbsp; &gt;&gt;</td></tr>
+        <tr><td>Literals</td><td class="guide-mono">255 &nbsp; 0xFF &nbsp; 0b1010 &nbsp; 0o17</td></tr>
+        <tr><td>Functions</td><td class="guide-mono">lsr(v,n) &nbsp; rol(v,n) &nbsp; ror(v,n)</td></tr>
+      </table>
+      <div class="guide-sub">Examples</div>
+      <ul class="guide-ex">
+        <li><code>(0x10 + 4) &lt;&lt; 2</code> — compute an address offset</li>
+        <li><code>~0xF &amp; 0xFF</code> — clear the low nibble of a byte</li>
+        <li><code>1 &lt;&lt; 7 | 1 &lt;&lt; 3</code> — set bits 7 and 3</li>
+        <li><code>rol(0x80000000, 1)</code> — rotate left, watch the wrap</li>
+      </ul>
+    </div>
+
+    <!-- Memory -->
+    <div class="card guide-card">
+      <div class="guide-head">
+        <span class="guide-num">2</span>
+        <span class="guide-title">Memory</span>
+        <button class="guide-go" onclick="goTab('mem')">Open ›</button>
+      </div>
+      <div class="guide-best">Best for: making sense of buffer / flash / RAM sizes.</div>
+      <p class="guide-desc">
+        Enter a byte count (decimal or hex) and read it across B · KB · MB · GB · TB at once.
+        Switch <b>Binary (1024)</b> vs <b>Decimal (1000)</b> to match datasheets vs drive specs.
+      </p>
+      <div class="guide-sub">Examples</div>
+      <ul class="guide-ex">
+        <li><code>0x100000</code> — confirm a flash region is exactly 1 MiB</li>
+        <li><code>1.5</code> with unit <b>GiB</b> — see the exact byte count</li>
+        <li><code>2048</code> bytes — how many KiB is this DMA buffer?</li>
+      </ul>
+    </div>
+
+    <!-- Freq -->
+    <div class="card guide-card">
+      <div class="guide-head">
+        <span class="guide-num">3</span>
+        <span class="guide-title">Freq ↔ Time</span>
+        <button class="guide-go" onclick="goTab('freq')">Open ›</button>
+      </div>
+      <div class="guide-best">Best for: clock periods, timer ticks, sample rates.</div>
+      <p class="guide-desc">
+        Two-way conversion between frequency and period, shown in every unit. Tap a clock
+        <b>preset</b> (24M, 48M, 100M…) to start, and read the ½ / ¼ period below.
+      </p>
+      <div class="guide-sub">Examples</div>
+      <ul class="guide-ex">
+        <li>Enter <code>100 MHz</code> → period is <code>10 ns</code></li>
+        <li>SPI at <code>8 MHz</code> → one bit takes <code>125 ns</code></li>
+        <li>Type <code>1 µs</code> on the period side → that's a <code>1 MHz</code> tick</li>
+      </ul>
+    </div>
+
+    <!-- dB -->
+    <div class="card guide-card">
+      <div class="guide-head">
+        <span class="guide-num">4</span>
+        <span class="guide-title">dB ↔ Linear</span>
+        <button class="guide-go" onclick="goTab('db')">Open ›</button>
+      </div>
+      <div class="guide-best">Best for: RF link budgets and gain/attenuation math.</div>
+      <p class="guide-desc">
+        Convert dB to/from linear power or voltage. Pick <b>Power (×10)</b> for dBm/watts
+        or <b>Voltage (×20)</b> for dBV. The reference table is clickable.
+      </p>
+      <div class="guide-sub">Examples</div>
+      <ul class="guide-ex">
+        <li><code>0 dBm</code> = <code>1 mW</code>; <code>30 dBm</code> = <code>1 W</code></li>
+        <li><code>-3 dB</code> ≈ half the power</li>
+        <li><code>20 dBV</code> = <code>10 V</code> (voltage mode)</li>
+      </ul>
+    </div>
+
+    <!-- Rise/BW -->
+    <div class="card guide-card">
+      <div class="guide-head">
+        <span class="guide-num">5</span>
+        <span class="guide-title">Rise / BW</span>
+        <button class="guide-go" onclick="goTab('rise')">Open ›</button>
+      </div>
+      <div class="guide-best">Best for: scope bandwidth and signal-integrity estimates.</div>
+      <p class="guide-desc">
+        Convert between 10–90% rise time and bandwidth using the Gaussian
+        (<code>0.35 / t<sub>r</sub></code>) and single-pole RC (<code>0.22 / t<sub>r</sub></code>) models.
+      </p>
+      <div class="guide-sub">Examples</div>
+      <ul class="guide-ex">
+        <li><code>1 ns</code> rise time → ~<code>350 MHz</code> needed</li>
+        <li>A <code>100 MHz</code> scope resolves edges down to ~<code>3.5 ns</code></li>
+      </ul>
+    </div>
+
+    <!-- Ohm -->
+    <div class="card guide-card">
+      <div class="guide-head">
+        <span class="guide-num">6</span>
+        <span class="guide-title">Ohm's Law</span>
+        <button class="guide-go" onclick="goTab('ohm')">Open ›</button>
+      </div>
+      <div class="guide-best">Best for: resistor, LED, and power-dissipation sizing.</div>
+      <p class="guide-desc">
+        Enter any <b>two</b> of V, I, R, P (each with its own unit) and the other two are
+        solved instantly. Known values show blue, computed ones green.
+      </p>
+      <div class="guide-sub">Examples</div>
+      <ul class="guide-ex">
+        <li><code>3.3 V</code> + <code>10 mA</code> → R = <code>330 Ω</code>, P = <code>33 mW</code></li>
+        <li><code>5 V</code> + <code>220 Ω</code> → current and dissipation for an LED resistor</li>
+      </ul>
+    </div>
+
+    <!-- IEEE -->
+    <div class="card guide-card">
+      <div class="guide-head">
+        <span class="guide-num">7</span>
+        <span class="guide-title">IEEE 754</span>
+        <button class="guide-go" onclick="goTab('ieee')">Open ›</button>
+      </div>
+      <div class="guide-best">Best for: debugging floating-point bit patterns.</div>
+      <p class="guide-desc">
+        Enter a float (<code>3.14</code>, <code>-1.5e-5</code>, <code>NaN</code>) or a raw hex
+        word and see the sign / exponent / mantissa split, the category, and the exact value.
+        Toggle <b>Float32</b> / <b>Double64</b>.
+      </p>
+      <div class="guide-sub">Examples</div>
+      <ul class="guide-ex">
+        <li><code>0x3F800000</code> (f32) decodes to <code>1.0</code></li>
+        <li><code>0.1</code> — see why it isn't exact in binary</li>
+        <li><code>NaN</code> / <code>Infinity</code> — inspect the special encodings</li>
+      </ul>
+    </div>
+  </div>
+
+</main>
+
+<footer class="app-footer">
+  Designed by <span>Nilesh M</span> · © 2026 · All rights reserved · <span class="app-ver">v1.0.0</span>
+</footer>
+
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════════════════════════════════
+   CONSTANTS & FIELD PALETTE
+   ═══════════════════════════════════════════════════════════════════ */
+const MASK64 = (1n << 64n) - 1n;
+
+const FIELD_PAL = [
+  {bg:'rgba(99,102,241,.15)', bd:'rgba(99,102,241,.4)',  tx:'#818cf8'},
+  {bg:'rgba(245,158,11,.15)', bd:'rgba(245,158,11,.4)',  tx:'#fbbf24'},
+  {bg:'rgba(236,72,153,.15)', bd:'rgba(236,72,153,.4)',  tx:'#f472b6'},
+  {bg:'rgba(20,184,166,.15)', bd:'rgba(20,184,166,.4)',  tx:'#2dd4bf'},
+  {bg:'rgba(168,85,247,.15)', bd:'rgba(168,85,247,.4)',  tx:'#c084fc'},
+  {bg:'rgba(249,115,22,.15)', bd:'rgba(249,115,22,.4)',  tx:'#fb923c'},
+  {bg:'rgba(34,197,94,.15)',  bd:'rgba(34,197,94,.4)',   tx:'#4ade80'},
+  {bg:'rgba(239,68,68,.15)',  bd:'rgba(239,68,68,.4)',   tx:'#f87171'},
+];
+
+const IEEE_COL = {
+  sign: {bg:'rgba(239,68,68,.15)',  bd:'rgba(239,68,68,.4)',   tx:'#f87171'},
+  exp:  {bg:'rgba(245,158,11,.15)', bd:'rgba(245,158,11,.4)',  tx:'#fbbf24'},
+  mant: {bg:'rgba(74,144,247,.15)', bd:'rgba(74,144,247,.4)',  tx:'#60a5fa'},
+};
+
+/* ═══════════════════════════════════════════════════════════════════
+   TABS & PERSISTENCE
+   ═══════════════════════════════════════════════════════════════════ */
+const TABS = ['num','mem','freq','db','rise','ohm','ieee','guide'];
+
+function goTab(id) {
+  document.querySelectorAll('.panel').forEach(el => el.classList.remove('on'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('on'));
+  const panel = document.getElementById('p-' + id);
+  if (panel) panel.classList.add('on');
+  const btn = document.querySelector(`.tab-btn[data-tab="${id}"]`);
+  if (btn) {
+    btn.classList.add('on');
+    btn.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+  localStorage.setItem('tab', id);
+}
+
+/* Tab bar overflow scrolling (narrow screens) */
+const tabGroup = document.getElementById('tabGroup');
+
+function scrollTabs(dir) {
+  tabGroup.scrollBy({ left: dir * Math.round(tabGroup.clientWidth * 0.6), behavior: 'smooth' });
+}
+
+function updateTabArrows() {
+  const overflows = tabGroup.scrollWidth > tabGroup.clientWidth + 1;
+  document.getElementById('tabNav').classList.toggle('scrollable', overflows);
+  document.getElementById('tabLeft').disabled  = tabGroup.scrollLeft <= 0;
+  document.getElementById('tabRight').disabled =
+    tabGroup.scrollLeft + tabGroup.clientWidth >= tabGroup.scrollWidth - 1;
+}
+
+tabGroup.addEventListener('scroll', updateTabArrows, { passive: true });
+window.addEventListener('resize', updateTabArrows);
+
+function toggleTheme() {
+  const isLight = document.documentElement.classList.toggle('light');
+  document.getElementById('themeBtn').textContent = isLight ? '☀' : '☾';
+  localStorage.setItem('theme', isLight ? 'light' : 'dark');
+}
+
+/* Keyboard shortcuts */
+document.addEventListener('keydown', e => {
+  const tag = e.target.tagName;
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  const idx = parseInt(e.key);
+  if (idx >= 1 && idx <= TABS.length) goTab(TABS[idx - 1]);
+});
+
+/* Init restore — defined here, invoked at the end of the script so all
+   let/const declarations and module-scope state exist first */
+function _init() {
+  const tab = localStorage.getItem('tab');
+  if (tab && TABS.includes(tab)) goTab(tab);
+  const theme = localStorage.getItem('theme');
+  if (theme === 'light') {
+    document.documentElement.classList.add('light');
+    document.getElementById('themeBtn').textContent = '☀';
+  }
+  updateTabArrows();
+  loadNumHistory();
+  initFreqPresets();
+  initDbMode();
+  initRefTable();
+  initOhm();
+  initMem();
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   NUMBER CONVERTER
+   ═══════════════════════════════════════════════════════════════════ */
+const numIn  = document.getElementById('numIn');
+const numOut = document.getElementById('numOut');
+let   curVal = null;
+let   byteEndian = 'big';   // 'big' | 'little'
+let   showFieldMap = false;
+let   curFields = [];       // parsed field definitions
+
+/* Input history */
+let inputHistory = [];
+let histIdx = -1;
+
+function loadNumHistory() {
+  try { inputHistory = JSON.parse(localStorage.getItem('numHistory') || '[]'); } catch { inputHistory = []; }
+}
+function saveNumHistory() {
+  try { localStorage.setItem('numHistory', JSON.stringify(inputHistory.slice(0, 20))); } catch {}
+}
+function pushHistory(expr) {
+  if (!expr) return;
+  inputHistory = inputHistory.filter(x => x !== expr);
+  inputHistory.unshift(expr);
+  if (inputHistory.length > 20) inputHistory.length = 20;
+  saveNumHistory();
+}
+
+/* evalExpr: supports 0x, 0b, 0o prefixes and plain integers */
+function evalExpr(expr) {
+  expr = expr.replace(/0x[0-9a-fA-F]+|0b[01]+|0o[0-7]+|\b\d+\b/g, m => `BigInt("${m}")`);
+  return Function(
+    `const _m=${MASK64}n,` +
+    `lsr=(v,n)=>(v&_m)>>n,` +
+    `rol=(v,n)=>{const s=n&63n;return s===0n?(v&_m):((v<<s)|((v&_m)>>(64n-s)))&_m},` +
+    `ror=(v,n)=>{const s=n&63n;return s===0n?(v&_m):(((v&_m)>>s)|(v<<(64n-s)))&_m};` +
+    `return(${expr})&_m;`
+  )();
+}
+
+async function doCopy(text, el) {
+  try {
+    await navigator.clipboard.writeText(text);
+    const orig = el.textContent;
+    el.textContent = '✓';
+    el.classList.add('copied');
+    setTimeout(() => { el.textContent = orig; el.classList.remove('copied'); }, 1200);
+  } catch {}
+}
+
+function updateNumOut(v) {
+  const hex    = '0x' + v.toString(16).toUpperCase().padStart(2, '0');
+  const dec    = v.toString(10);
+  const oct    = '0o' + v.toString(8);
+  const signed = v >= (1n << 63n) ? v - (1n << 64n) : v;
+  const negCol = signed < 0n ? 'var(--red)' : 'var(--text2)';
+
+  numOut.innerHTML =
+    `<span class="out-chunk">` +
+      `<span class="out-tag">hex</span>` +
+      `<span style="color:var(--blue)">${hex}</span>` +
+      `<button class="copy-btn" title="Copy hex">⎘</button>` +
+    `</span>` +
+    `<span class="out-sep">·</span>` +
+    `<span class="out-chunk">` +
+      `<span class="out-tag">dec</span>` +
+      `<span style="color:var(--text)">${dec}</span>` +
+      `<button class="copy-btn" title="Copy decimal">⎘</button>` +
+    `</span>` +
+    `<span class="out-sep">·</span>` +
+    `<span class="out-chunk">` +
+      `<span class="out-tag">oct</span>` +
+      `<span style="color:var(--amber)">${oct}</span>` +
+      `<button class="copy-btn" title="Copy octal">⎘</button>` +
+    `</span>` +
+    `<span class="out-sep">·</span>` +
+    `<span class="out-chunk">` +
+      `<span class="out-tag">i64</span>` +
+      `<span style="color:${negCol}">${signed}</span>` +
+      `<button class="copy-btn" title="Copy i64">⎘</button>` +
+    `</span>`;
+
+  const [hexBtn, decBtn, octBtn, i64Btn] = numOut.querySelectorAll('.copy-btn');
+  hexBtn.addEventListener('click', () => doCopy(hex,    hexBtn));
+  decBtn.addEventListener('click', () => doCopy(dec,    decBtn));
+  octBtn.addEventListener('click', () => doCopy(oct,    octBtn));
+  i64Btn.addEventListener('click', () => doCopy(signed.toString(), i64Btn));
+}
+
+function showResult(v) {
+  curVal = v;
+  updateNumOut(v);
+  renderBits(v);
+  renderBytes(v);
+  if (curFields.length) renderFieldValues(v);
+}
+
+function resetOutput() {
+  curVal = null;
+  numOut.innerHTML = '<span style="color:var(--text3)">result appears here</span>';
+  document.getElementById('bitMatrix').innerHTML = '';
+  document.getElementById('byteRow').style.display = 'none';
+  document.getElementById('pcBadge').style.display = 'none';
+  document.getElementById('fieldmapValues').innerHTML = '';
+}
+
+/* Real-time eval with 200ms debounce */
+let evalTimer = null;
+numIn.addEventListener('input', () => {
+  histIdx = -1;
+  clearTimeout(evalTimer);
+  evalTimer = setTimeout(() => {
+    const raw = numIn.value.trim();
+    if (!raw) { resetOutput(); return; }
+    try { showResult(evalExpr(raw)); } catch { /* keep last valid */ }
+  }, 200);
+});
+
+/* Enter: commit + history */
+numIn.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    clearTimeout(evalTimer);
+    const raw = numIn.value.trim();
+    if (!raw) { resetOutput(); return; }
+    try {
+      showResult(evalExpr(raw));
+      pushHistory(raw);
+      histIdx = -1;
+    } catch {
+      numOut.innerHTML = `<span style="color:var(--red)">invalid expression</span>`;
+    }
+    return;
+  }
+  /* Arrow history navigation */
+  if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (!inputHistory.length) return;
+    histIdx = Math.min(histIdx + 1, inputHistory.length - 1);
+    numIn.value = inputHistory[histIdx];
+    numIn.dispatchEvent(new Event('input'));
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (histIdx <= 0) { histIdx = -1; numIn.value = ''; resetOutput(); return; }
+    histIdx--;
+    numIn.value = inputHistory[histIdx];
+    numIn.dispatchEvent(new Event('input'));
+  } else {
+    histIdx = -1;
+  }
+});
+
+/* Endian toggle */
+function toggleEndian() {
+  byteEndian = byteEndian === 'big' ? 'little' : 'big';
+  const btn = document.getElementById('endianBtn');
+  btn.textContent = byteEndian === 'big' ? 'BE' : 'LE';
+  btn.classList.toggle('on', byteEndian === 'big');
+  if (curVal !== null) { renderBytes(curVal); }
+}
+
+/* Field map toggle */
+function toggleFieldMap() {
+  showFieldMap = !showFieldMap;
+  document.getElementById('fieldsBtn').classList.toggle('on', showFieldMap);
+  document.getElementById('fieldmapSection').style.display = showFieldMap ? '' : 'none';
+  if (curVal !== null && showFieldMap) renderFieldValues(curVal);
+}
+
+/* Parse field map textarea */
+function parseFieldMap() {
+  const lines = document.getElementById('fieldMapTA').value.split('\n');
+  curFields = [];
+  lines.forEach((line, idx) => {
+    line = line.trim();
+    if (!line) return;
+    const m1 = line.match(/^(\d+):(\d+)\s+(\S+)/);
+    const m2 = line.match(/^(\d+)\s+(\S+)/);
+    if (m1) {
+      const hi = parseInt(m1[1]), lo = parseInt(m1[2]);
+      curFields.push({ hi: Math.max(hi,lo), lo: Math.min(hi,lo), name: m1[3], pal: idx % FIELD_PAL.length });
+    } else if (m2) {
+      const bit = parseInt(m2[1]);
+      curFields.push({ hi: bit, lo: bit, name: m2[2], pal: idx % FIELD_PAL.length });
+    }
+  });
+  if (curVal !== null) { renderBits(curVal); renderFieldValues(curVal); }
+}
+
+function renderFieldValues(val) {
+  const fv = document.getElementById('fieldmapValues');
+  if (!curFields.length || !showFieldMap) { fv.innerHTML = ''; return; }
+  fv.innerHTML = '';
+  curFields.forEach(f => {
+    const width = f.hi - f.lo + 1;
+    const mask  = (1n << BigInt(width)) - 1n;
+    const fval  = (val >> BigInt(f.lo)) & mask;
+    const p     = FIELD_PAL[f.pal];
+    const row   = document.createElement('div');
+    row.className = 'fmv-row';
+    row.style.borderColor = p.bd;
+    row.innerHTML =
+      `<span class="fmv-name" style="color:${p.tx}">${f.name}</span>` +
+      `<span class="fmv-range">[${f.hi}:${f.lo}]</span>` +
+      `<span class="fmv-hex">0x${fval.toString(16).toUpperCase()}</span>` +
+      `<span class="fmv-dec">${fval}</span>`;
+    fv.appendChild(row);
+  });
+}
+
+/* Render 64-bit grid */
+function renderBits(val) {
+  const bin = val.toString(2).padStart(64, '0');
+  const mx  = document.getElementById('bitMatrix');
+  mx.innerHTML = '';
+  let pop = 0;
+
+  for (let r = 0; r < 4; r++) {
+    const row = document.createElement('div');
+    row.className = 'bit-row';
+    const lbl = document.createElement('div');
+    lbl.className = 'row-lbl';
+    lbl.textContent = 63 - r * 16;
+    row.appendChild(lbl);
+
+    for (let c = 0; c < 16; c++) {
+      if (c > 0 && c % 4 === 0) {
+        const g = document.createElement('div');
+        g.className = c === 8 ? 'bgap' : 'ngap';
+        row.appendChild(g);
+      }
+      const i   = r * 16 + c;
+      const b   = bin[i];
+      const bit = 63 - i;
+      if (b === '1') pop++;
+
+      const el = document.createElement('div');
+      el.className = 'bit';
+      el.textContent = b;
+      el.dataset.t = `b${bit}`;
+
+      /* Field coloring */
+      const field = curFields.find(f => bit >= f.lo && bit <= f.hi);
+      if (field && showFieldMap) {
+        const p = FIELD_PAL[field.pal];
+        el.style.background   = b === '1' ? p.bg : 'var(--surface2)';
+        el.style.borderColor  = b === '1' ? p.bd : p.bd.replace('.4', '.2');
+        el.style.color        = b === '1' ? p.tx : p.tx;
+        el.style.opacity      = b === '1' ? '1' : '0.4';
+      } else {
+        if (b === '1') el.classList.add('on');
+      }
+
+      el.addEventListener('click', () => {
+        if (curVal === null) return;
+        curVal ^= 1n << BigInt(63 - i);
+        numIn.value = '0x' + curVal.toString(16).toUpperCase();
+        updateNumOut(curVal);
+        renderBits(curVal);
+        renderBytes(curVal);
+        if (curFields.length) renderFieldValues(curVal);
+      });
+      row.appendChild(el);
+    }
+    mx.appendChild(row);
+  }
+
+  const badge = document.getElementById('pcBadge');
+  badge.textContent = `${pop} set`;
+  badge.style.display = '';
+
+  /* Check overflow for scroll hint */
+  requestAnimationFrame(() => {
+    const wrap = document.getElementById('bitsScrollWrap');
+    const inner = wrap.querySelector('.bits-scroll');
+    const matrix = document.getElementById('bitMatrix');
+    wrap.classList.toggle('overflows', matrix.scrollWidth > inner.clientWidth + 2);
+  });
+}
+
+function renderBytes(val) {
+  const strip = document.getElementById('byteRow');
+  strip.innerHTML = '';
+  const order = byteEndian === 'big'
+    ? [7,6,5,4,3,2,1,0]
+    : [0,1,2,3,4,5,6,7];
+  for (const b of order) {
+    const byte = (val >> BigInt(b * 8)) & 0xFFn;
+    const cell = document.createElement('div');
+    cell.className = 'byte-cell';
+    cell.innerHTML =
+      `<div class="byte-cell-lbl">B${b}</div>` +
+      `<div class="byte-cell-val">0x${byte.toString(16).toUpperCase().padStart(2,'0')}</div>`;
+    strip.appendChild(cell);
+  }
+  strip.style.display = 'flex';
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   FREQ ↔ TIME
+   ═══════════════════════════════════════════════════════════════════ */
+const FU = [
+  { l:'THz', f:1e12 }, { l:'GHz', f:1e9  }, { l:'MHz', f:1e6  },
+  { l:'kHz', f:1e3  }, { l:'Hz',  f:1    }, { l:'mHz', f:1e-3 },
+];
+const PU = [
+  { l:'s',  f:1     }, { l:'ms', f:1e-3  }, { l:'µs', f:1e-6  },
+  { l:'ns', f:1e-9  }, { l:'ps', f:1e-12 }, { l:'fs', f:1e-15 },
+];
+
+function fmt(v) {
+  if (!Number.isFinite(v) || isNaN(v)) return '—';
+  if (v === 0) return '0';
+  const a = Math.abs(v);
+  if (a >= 1e5 || a < 0.001)
+    return v.toExponential(3).replace(/\.?0+(e)/, '$1');
+  return parseFloat(v.toPrecision(5)).toString();
+}
+
+function fmtTime(s) {
+  if (!Number.isFinite(s) || s <= 0) return '—';
+  const units = [
+    {l:'fs', f:1e-15}, {l:'ps', f:1e-12}, {l:'ns', f:1e-9},
+    {l:'µs', f:1e-6},  {l:'ms', f:1e-3},  {l:'s',  f:1},
+  ];
+  for (let i = units.length - 1; i >= 0; i--) {
+    if (s >= units[i].f * 0.9999) return fmt(s / units[i].f) + ' ' + units[i].l;
+  }
+  return fmt(s / units[0].f) + ' ' + units[0].l;
+}
+
+function fmtFreq(hz) {
+  if (!Number.isFinite(hz) || hz <= 0) return '—';
+  const units = [
+    {l:'Hz', f:1}, {l:'kHz', f:1e3}, {l:'MHz', f:1e6},
+    {l:'GHz', f:1e9}, {l:'THz', f:1e12},
+  ];
+  for (let i = units.length - 1; i >= 0; i--) {
+    if (hz >= units[i].f * 0.9999) return fmt(hz / units[i].f) + ' ' + units[i].l;
+  }
+  return fmt(hz) + ' Hz';
+}
+
+function fillGrid(gridId, total, units, hiLabel) {
+  const g = document.getElementById(gridId);
+  g.innerHTML = '';
+  units.forEach(u => {
+    const cell = document.createElement('div');
+    cell.className = 'unit-cell' + (u.l === hiLabel ? ' hi' : '');
+    cell.innerHTML =
+      `<div class="unit-cell-label">${u.l}</div>` +
+      `<div class="unit-cell-val">${fmt(total / u.f)}</div>`;
+    cell.addEventListener('click', () => copyCellVal(cell));
+    g.appendChild(cell);
+  });
+}
+
+function copyCellVal(cell) {
+  const val = cell.querySelector('.unit-cell-val').textContent;
+  if (val === '—') return;
+  navigator.clipboard.writeText(val).catch(() => {});
+  cell.classList.add('flash');
+  setTimeout(() => cell.classList.remove('flash'), 400);
+}
+
+let freqBusy = false;
+
+function fromFreq() {
+  if (freqBusy) return;
+  const v  = parseFloat(document.getElementById('fVal').value);
+  const fu = parseFloat(document.getElementById('fUnit').value);
+  const fl = document.getElementById('fUnit').selectedOptions[0].text;
+  if (!(v > 0)) { clearFreqGrids(); return; }
+
+  const hz  = v * fu;
+  const sec = 1 / hz;
+  const pu  = parseFloat(document.getElementById('pUnit').value);
+  const pl  = document.getElementById('pUnit').selectedOptions[0].text;
+
+  freqBusy = true;
+  document.getElementById('pVal').value = fmt(sec / pu);
+  freqBusy = false;
+
+  fillGrid('fGrid', hz,  FU, fl);
+  fillGrid('pGrid', sec, PU, pl);
+  updateDerived(sec);
+}
+
+function fromPeriod() {
+  if (freqBusy) return;
+  const v  = parseFloat(document.getElementById('pVal').value);
+  const pu = parseFloat(document.getElementById('pUnit').value);
+  const pl = document.getElementById('pUnit').selectedOptions[0].text;
+  if (!(v > 0)) { clearFreqGrids(); return; }
+
+  const sec = v * pu;
+  const hz  = 1 / sec;
+  const fu  = parseFloat(document.getElementById('fUnit').value);
+  const fl  = document.getElementById('fUnit').selectedOptions[0].text;
+
+  freqBusy = true;
+  document.getElementById('fVal').value = fmt(hz / fu);
+  freqBusy = false;
+
+  fillGrid('fGrid', hz,  FU, fl);
+  fillGrid('pGrid', sec, PU, pl);
+  updateDerived(sec);
+}
+
+function clearFreqGrids() {
+  document.getElementById('fGrid').innerHTML = '';
+  document.getElementById('pGrid').innerHTML = '';
+  document.getElementById('derivedRow').style.display = 'none';
+}
+
+function updateDerived(sec) {
+  const row = document.getElementById('derivedRow');
+  if (!Number.isFinite(sec) || sec <= 0) { row.style.display = 'none'; return; }
+  document.getElementById('derivedHalf').innerHTML    = `½ period = <span>${fmtTime(sec/2)}</span>`;
+  document.getElementById('derivedQuarter').innerHTML = `¼ period = <span>${fmtTime(sec/4)}</span>`;
+  row.style.display = '';
+}
+
+/* Clock presets */
+const FREQ_PRESETS = [
+  {l:'24M',  hz:24e6},  {l:'33M',  hz:33e6},  {l:'48M',  hz:48e6},
+  {l:'100M', hz:100e6}, {l:'125M', hz:125e6}, {l:'200M', hz:200e6},
+  {l:'1G',   hz:1e9},   {l:'2.4G', hz:2.4e9}, {l:'5G',   hz:5e9},
+];
+
+function initFreqPresets() {
+  const row = document.getElementById('freqPresets');
+  FREQ_PRESETS.forEach(p => {
+    const btn = document.createElement('button');
+    btn.className = 'preset-btn';
+    btn.textContent = p.l;
+    btn.addEventListener('click', () => {
+      const fSel = document.getElementById('fUnit');
+      if (p.hz >= 1e9) {
+        document.getElementById('fVal').value = fmt(p.hz / 1e9);
+        setSelectByValue(fSel, '1e9');
+      } else {
+        document.getElementById('fVal').value = fmt(p.hz / 1e6);
+        setSelectByValue(fSel, '1e6');
+      }
+      fromFreq();
+    });
+    row.appendChild(btn);
+  });
+}
+
+function setSelectByValue(sel, val) {
+  for (let i = 0; i < sel.options.length; i++) {
+    if (sel.options[i].value === val) { sel.selectedIndex = i; break; }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   dB ↔ LINEAR
+   ═══════════════════════════════════════════════════════════════════ */
+let dbMode = 'power'; // 'power' | 'voltage'
+
+const DB_POWER_UNITS  = [{l:'kW',f:1e3},{l:'W',f:1},{l:'mW',f:1e-3},{l:'µW',f:1e-6},{l:'nW',f:1e-9},{l:'pW',f:1e-12}];
+const DB_VOLT_UNITS   = [{l:'kV',f:1e3},{l:'V',f:1},{l:'mV',f:1e-3},{l:'µV',f:1e-6},{l:'nV',f:1e-9}];
+
+const DB_POWER_REFS = [
+  {db:-30, desc:'-30 dBm = 1 µW'},   {db:-20, desc:'-20 dBm = 10 µW'},
+  {db:-10, desc:'-10 dBm = 0.1 mW'}, {db:0,   desc:'0 dBm = 1 mW'},
+  {db:10,  desc:'10 dBm = 10 mW'},   {db:20,  desc:'20 dBm = 0.1 W'},
+  {db:30,  desc:'30 dBm = 1 W'},
+];
+const DB_VOLT_REFS = [
+  {db:-20, desc:'-20 dBV = 100 mV'},  {db:-6,  desc:'-6 dBV ≈ 0.5 V'},
+  {db:0,   desc:'0 dBV = 1 V'},       {db:6,   desc:'6 dBV ≈ 2 V'},
+  {db:20,  desc:'20 dBV = 10 V'},
+];
+
+function initDbMode() {
+  updateDbSelects();
+}
+
+function setDbMode(mode) {
+  dbMode = mode;
+  document.getElementById('dbPowBtn').classList.toggle('on',  mode === 'power');
+  document.getElementById('dbVoltBtn').classList.toggle('on', mode === 'voltage');
+  updateDbSelects();
+  initRefTable();
+  fromDb();
+}
+
+function updateDbSelects() {
+  const linSel = document.getElementById('linUnit');
+  const units  = dbMode === 'power' ? DB_POWER_UNITS : DB_VOLT_UNITS;
+  linSel.innerHTML = '';
+  units.forEach((u, i) => {
+    const opt = document.createElement('option');
+    opt.value = u.f;
+    opt.text  = u.l;
+    if ((dbMode === 'power' && u.l === 'mW') || (dbMode === 'voltage' && u.l === 'V')) opt.selected = true;
+    linSel.appendChild(opt);
+  });
+  document.getElementById('dbUnitLabel').textContent   = dbMode === 'power' ? 'dBm' : 'dBV';
+  document.getElementById('dbSideLabel').textContent   = dbMode === 'power' ? 'dBm (Power)' : 'dBV (Voltage)';
+  document.getElementById('linSideLabel').textContent  = dbMode === 'power' ? 'Linear (W)' : 'Linear (V)';
+}
+
+let dbBusy = false;
+
+function dbToLin(db) {
+  return dbMode === 'power'
+    ? 1e-3 * Math.pow(10, db / 10)
+    : 1.0  * Math.pow(10, db / 20);
+}
+function linToDb(lin) {
+  return dbMode === 'power'
+    ? 10 * Math.log10(lin / 1e-3)
+    : 20 * Math.log10(lin / 1.0);
+}
+
+function fromDb() {
+  if (dbBusy) return;
+  const db = parseFloat(document.getElementById('dbVal').value);
+  if (!isFinite(db)) { clearDbGrids(); return; }
+
+  const linSI = dbToLin(db);
+  const lu    = parseFloat(document.getElementById('linUnit').value);
+  const ll    = document.getElementById('linUnit').selectedOptions[0].text;
+
+  dbBusy = true;
+  document.getElementById('linVal').value = fmt(linSI / lu);
+  dbBusy = false;
+
+  const units = dbMode === 'power' ? DB_POWER_UNITS : DB_VOLT_UNITS;
+  fillGridRaw('dbGrid',  [{l:'dB', f:1}], db, 'dB');
+  fillDbLinGrid('linGrid', linSI, units, ll);
+}
+
+function fromLin() {
+  if (dbBusy) return;
+  const linDisp = parseFloat(document.getElementById('linVal').value);
+  const lu      = parseFloat(document.getElementById('linUnit').value);
+  const ll      = document.getElementById('linUnit').selectedOptions[0].text;
+  if (!isFinite(linDisp) || linDisp <= 0) { clearDbGrids(); return; }
+
+  const linSI = linDisp * lu;
+  const db    = linToDb(linSI);
+
+  dbBusy = true;
+  document.getElementById('dbVal').value = fmt(db);
+  dbBusy = false;
+
+  const units = dbMode === 'power' ? DB_POWER_UNITS : DB_VOLT_UNITS;
+  fillGridRaw('dbGrid',  [{l:'dB', f:1}], db, 'dB');
+  fillDbLinGrid('linGrid', linSI, units, ll);
+}
+
+function clearDbGrids() {
+  document.getElementById('dbGrid').innerHTML  = '';
+  document.getElementById('linGrid').innerHTML = '';
+}
+
+function fillDbLinGrid(gridId, totalSI, units, hiLabel) {
+  const g = document.getElementById(gridId);
+  g.innerHTML = '';
+  units.forEach(u => {
+    const cell = document.createElement('div');
+    cell.className = 'unit-cell' + (u.l === hiLabel ? ' hi' : '');
+    cell.innerHTML =
+      `<div class="unit-cell-label">${u.l}</div>` +
+      `<div class="unit-cell-val">${fmt(totalSI / u.f)}</div>`;
+    cell.addEventListener('click', () => copyCellVal(cell));
+    g.appendChild(cell);
+  });
+}
+
+function fillGridRaw(gridId, units, totalSI, hiLabel) {
+  const g = document.getElementById(gridId);
+  g.innerHTML = '';
+  units.forEach(u => {
+    const cell = document.createElement('div');
+    cell.className = 'unit-cell' + (u.l === hiLabel ? ' hi' : '');
+    cell.innerHTML =
+      `<div class="unit-cell-label">${u.l}</div>` +
+      `<div class="unit-cell-val">${fmt(totalSI / u.f)}</div>`;
+    cell.addEventListener('click', () => copyCellVal(cell));
+    g.appendChild(cell);
+  });
+}
+
+function initRefTable() {
+  const refs = dbMode === 'power' ? DB_POWER_REFS : DB_VOLT_REFS;
+  const label = dbMode === 'power' ? 'Common Power References' : 'Common Voltage References';
+  document.getElementById('refTableLabel').textContent = label;
+  const t = document.getElementById('refTable');
+  t.innerHTML = `<tr><th>dB</th><th>Description</th></tr>`;
+  refs.forEach(r => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${r.db}</td><td>${r.desc}</td>`;
+    tr.addEventListener('click', () => {
+      document.getElementById('dbVal').value = r.db;
+      fromDb();
+    });
+    t.appendChild(tr);
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   RISE TIME ↔ BANDWIDTH
+   ═══════════════════════════════════════════════════════════════════ */
+let riseBusy = false;
+
+function fromRise() {
+  if (riseBusy) return;
+  const v  = parseFloat(document.getElementById('riseVal').value);
+  const ru = parseFloat(document.getElementById('riseUnit').value);
+  if (!(v > 0)) { clearRise(); return; }
+
+  const tr  = v * ru;
+  const bwG = 0.35 / tr;  // Gaussian
+  const bwR = 0.22 / tr;  // Single-pole RC
+
+  const bu = parseFloat(document.getElementById('bwUnit').value);
+  const bl = document.getElementById('bwUnit').selectedOptions[0].text;
+
+  riseBusy = true;
+  document.getElementById('bwVal').value = fmt(bwG / bu);
+  riseBusy = false;
+
+  document.getElementById('riseGauss').textContent = fmtFreq(bwG);
+  document.getElementById('riseRC').textContent    = fmtFreq(bwR);
+}
+
+function fromBw() {
+  if (riseBusy) return;
+  const v  = parseFloat(document.getElementById('bwVal').value);
+  const bu = parseFloat(document.getElementById('bwUnit').value);
+  if (!(v > 0)) { clearRise(); return; }
+
+  const bw  = v * bu;
+  const trG = 0.35 / bw;  // Gaussian
+  const trR = 0.22 / bw;  // Single-pole RC
+
+  const ru = parseFloat(document.getElementById('riseUnit').value);
+  const rl = document.getElementById('riseUnit').selectedOptions[0].text;
+
+  riseBusy = true;
+  document.getElementById('riseVal').value = fmt(trG / ru);
+  riseBusy = false;
+
+  document.getElementById('riseGauss').textContent = fmtTime(trG) + ' → ' + fmtFreq(bw);
+  document.getElementById('riseRC').textContent    = fmtTime(trR) + ' → ' + fmtFreq(bw);
+}
+
+function clearRise() {
+  document.getElementById('riseGauss').textContent = '—';
+  document.getElementById('riseRC').textContent    = '—';
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   OHM'S LAW
+   ═══════════════════════════════════════════════════════════════════ */
+let ohmLastChanged = [];
+
+function initOhm() {
+  // nothing extra needed; HTML is static
+}
+
+function ohmInput(field) {
+  ohmLastChanged = ohmLastChanged.filter(f => f !== field);
+  ohmLastChanged.unshift(field);
+  if (ohmLastChanged.length > 4) ohmLastChanged.length = 4;
+  solveOhm();
+}
+
+function getOhmVal(id, unitId) {
+  const v = parseFloat(document.getElementById(id).value);
+  const u = parseFloat(document.getElementById(unitId).value);
+  if (!isFinite(v) || document.getElementById(id).value.trim() === '') return null;
+  return v * u;
+}
+
+function autoSI(v, baseUnit) {
+  if (!isFinite(v) || v === 0) return '0 ' + baseUnit;
+  const prefixes = [
+    {p:'T', f:1e12}, {p:'G', f:1e9}, {p:'M', f:1e6}, {p:'k', f:1e3},
+    {p:'',  f:1},    {p:'m', f:1e-3},{p:'µ', f:1e-6},{p:'n', f:1e-9},
+    {p:'p', f:1e-12},{p:'f', f:1e-15},
+  ];
+  const a = Math.abs(v);
+  for (const p of prefixes) {
+    if (a >= p.f * 0.9999) {
+      const num = v / p.f;
+      return fmt(num) + ' ' + p.p + baseUnit;
+    }
+  }
+  return fmt(v) + ' ' + baseUnit;
+}
+
+function solveOhm() {
+  const V = getOhmVal('oV', 'oVu');
+  const I = getOhmVal('oI', 'oIu');
+  const R = getOhmVal('oR', 'oRu');
+  const P = getOhmVal('oP', 'oPu');
+
+  const known = {V, I, R, P};
+  const filled = Object.keys(known).filter(k => known[k] !== null);
+  const ohmRes = document.getElementById('ohmResult');
+
+  if (filled.length < 2) {
+    ohmRes.innerHTML = '<div class="ohm-placeholder">Enter any 2 values above to compute the other 2</div>';
+    return;
+  }
+
+  /* Use 2 most-recently-changed filled fields */
+  let active = ohmLastChanged.filter(f => known[f] !== null);
+  while (active.length < 2) {
+    const missing = filled.find(f => !active.includes(f));
+    if (missing) active.push(missing); else break;
+  }
+  const [a, b] = active;
+
+  let result = {};
+  const V2 = known['V'], I2 = known['I'], R2 = known['R'], P2 = known['P'];
+  const av = known[a], bv = known[b];
+
+  /* 6 combinations */
+  if (has(active,'V') && has(active,'I')) {
+    result.V = av || bv; result.I = bv || av;
+    result.R = known['V'] / known['I'];
+    result.P = known['V'] * known['I'];
+  } else if (has(active,'V') && has(active,'R')) {
+    result.V = known['V']; result.R = known['R'];
+    result.I = known['V'] / known['R'];
+    result.P = known['V'] * known['V'] / known['R'];
+  } else if (has(active,'V') && has(active,'P')) {
+    result.V = known['V']; result.P = known['P'];
+    result.I = known['P'] / known['V'];
+    result.R = known['V'] * known['V'] / known['P'];
+  } else if (has(active,'I') && has(active,'R')) {
+    result.I = known['I']; result.R = known['R'];
+    result.V = known['I'] * known['R'];
+    result.P = known['I'] * known['I'] * known['R'];
+  } else if (has(active,'I') && has(active,'P')) {
+    result.I = known['I']; result.P = known['P'];
+    result.V = known['P'] / known['I'];
+    result.R = known['P'] / (known['I'] * known['I']);
+  } else if (has(active,'R') && has(active,'P')) {
+    result.R = known['R']; result.P = known['P'];
+    result.V = Math.sqrt(known['P'] * known['R']);
+    result.I = Math.sqrt(known['P'] / known['R']);
+  }
+
+  const UNITS = {V:'V', I:'A', R:'Ω', P:'W'};
+  const knownSet = new Set(active.slice(0,2));
+
+  ohmRes.innerHTML = `<div class="ohm-results-grid">` +
+    ['V','I','R','P'].map(k => {
+      const isK = knownSet.has(k);
+      const val  = isFinite(result[k]) ? autoSI(result[k], UNITS[k]) : '—';
+      return `<div class="orc ${isK?'known':'computed'}">` +
+        `<div class="orc-label">${k}</div>` +
+        `<div class="orc-val">${val}</div>` +
+      `</div>`;
+    }).join('') +
+  `</div>`;
+}
+
+function has(arr, val) { return arr.includes(val); }
+
+/* ═══════════════════════════════════════════════════════════════════
+   IEEE 754 VISUALIZER
+   ═══════════════════════════════════════════════════════════════════ */
+let ieeeMode = 'f32'; // 'f32' | 'f64'
+
+function setIeeeMode(mode) {
+  ieeeMode = mode;
+  document.getElementById('ieeef32Btn').classList.toggle('on', mode === 'f32');
+  document.getElementById('ieeef64Btn').classList.toggle('on', mode === 'f64');
+  doIeee();
+}
+
+/* Extract bits using DataView */
+function f32Bits(f) {
+  const b = new ArrayBuffer(4);
+  new DataView(b).setFloat32(0, f, false);
+  return new DataView(b).getUint32(0, false);
+}
+function f64Bits(f) {
+  const b = new ArrayBuffer(8);
+  new DataView(b).setFloat64(0, f, false);
+  const v = new DataView(b);
+  return (BigInt(v.getUint32(0, false)) << 32n) | BigInt(v.getUint32(4, false));
+}
+
+function parseIeeeInput(raw) {
+  raw = raw.trim();
+  if (!raw) return null;
+  if (/^0x[0-9a-fA-F]+$/i.test(raw)) {
+    const n = BigInt(raw);
+    if (ieeeMode === 'f32') {
+      if (n > 0xFFFFFFFFn) return null;
+      const b = new ArrayBuffer(4);
+      new DataView(b).setUint32(0, Number(n), false);
+      return { bits: Number(n), fval: new DataView(b).getFloat32(0, false) };
+    } else {
+      if (n > 0xFFFFFFFFFFFFFFFFn) return null;
+      const b = new ArrayBuffer(8);
+      const dv = new DataView(b);
+      dv.setUint32(0, Number(n >> 32n), false);
+      dv.setUint32(4, Number(n & 0xFFFFFFFFn), false);
+      return { bits: n, fval: dv.getFloat64(0, false) };
+    }
+  }
+  /* Parse float */
+  let fval;
+  const low = raw.toLowerCase();
+  if (low === 'nan' || low === '+nan') fval = NaN;
+  else if (low === 'infinity' || low === '+infinity' || low === 'inf' || low === '+inf') fval = Infinity;
+  else if (low === '-infinity' || low === '-inf') fval = -Infinity;
+  else { fval = parseFloat(raw); if (!isFinite(fval) && !isNaN(fval)) return null; }
+
+  if (ieeeMode === 'f32') {
+    const bits = f32Bits(fval);
+    return { bits, fval: (() => { const b=new ArrayBuffer(4); new DataView(b).setUint32(0,bits,false); return new DataView(b).getFloat32(0,false); })() };
+  } else {
+    const bits = f64Bits(fval);
+    return { bits, fval };
+  }
+}
+
+function ieeeBitField(idx) {
+  if (ieeeMode === 'f32') {
+    if (idx === 0) return 'sign';
+    if (idx <= 8)  return 'exp';
+    return 'mant';
+  } else {
+    if (idx === 0)  return 'sign';
+    if (idx <= 11)  return 'exp';
+    return 'mant';
+  }
+}
+
+function renderIeeeBits(bits) {
+  const totalBits = ieeeMode === 'f32' ? 32 : 64;
+  const rows      = totalBits / 16;
+  const binStr    = ieeeMode === 'f32'
+    ? (bits >>> 0).toString(2).padStart(32, '0')
+    : bits.toString(2).padStart(64, '0');
+
+  const mx = document.getElementById('ieeeBitMatrix');
+  mx.innerHTML = '';
+
+  for (let r = 0; r < rows; r++) {
+    const row = document.createElement('div');
+    row.className = 'bit-row';
+    const lbl = document.createElement('div');
+    lbl.className = 'row-lbl';
+    lbl.textContent = totalBits - 1 - r * 16;
+    row.appendChild(lbl);
+
+    for (let c = 0; c < 16; c++) {
+      if (c > 0 && c % 4 === 0) {
+        const g = document.createElement('div');
+        g.className = c === 8 ? 'bgap' : 'ngap';
+        row.appendChild(g);
+      }
+      const i      = r * 16 + c;
+      const b      = binStr[i];
+      const ftype  = ieeeBitField(i);
+      const col    = IEEE_COL[ftype];
+
+      const el = document.createElement('div');
+      el.className  = 'bit';
+      el.textContent = b;
+      el.dataset.t  = `b${totalBits - 1 - i} (${ftype})`;
+      el.style.background  = b === '1' ? col.bg : 'var(--surface2)';
+      el.style.borderColor = col.bd;
+      el.style.color       = b === '1' ? col.tx : col.tx;
+      el.style.opacity     = b === '1' ? '1' : '0.4';
+      row.appendChild(el);
+    }
+    mx.appendChild(row);
+  }
+
+  /* Check overflow */
+  requestAnimationFrame(() => {
+    const wrap  = document.getElementById('ieeeBitsWrap');
+    const inner = wrap.querySelector('.bits-scroll');
+    const matrix = document.getElementById('ieeeBitMatrix');
+    wrap.classList.toggle('overflows', matrix.scrollWidth > inner.clientWidth + 2);
+  });
+}
+
+function decodeIeee(bits, fval) {
+  const info = document.getElementById('ieeeInfo');
+  if (bits === null) { info.innerHTML = ''; return; }
+
+  let signBit, expBits, mantBits, expBias, expLen, mantLen;
+  if (ieeeMode === 'f32') {
+    const n = bits >>> 0;
+    signBit  = (n >>> 31) & 1;
+    expBits  = (n >>> 23) & 0xFF;
+    mantBits = n & 0x7FFFFF;
+    expBias  = 127;
+    expLen   = 8;
+    mantLen  = 23;
+  } else {
+    signBit  = Number((bits >> 63n) & 1n);
+    expBits  = Number((bits >> 52n) & 0x7FFn);
+    mantBits = bits & ((1n << 52n) - 1n);
+    expBias  = 1023;
+    expLen   = 11;
+    mantLen  = 52;
+  }
+
+  const allExpOnes = ieeeMode === 'f32' ? expBits === 0xFF : expBits === 0x7FF;
+  const mantZero   = ieeeMode === 'f32' ? mantBits === 0 : mantBits === 0n;
+
+  let category;
+  if (expBits === 0 && mantZero)  category = 'Zero';
+  else if (expBits === 0)          category = 'Denormal';
+  else if (allExpOnes && mantZero) category = 'Infinity';
+  else if (allExpOnes)             category = 'NaN';
+  else                             category = 'Normal';
+
+  const actualExp = expBits === 0 ? 1 - expBias : expBits - expBias;
+  const impliedLeading = (expBits === 0) ? 0 : 1;
+
+  const mantHex = ieeeMode === 'f32'
+    ? '0x' + mantBits.toString(16).toUpperCase().padStart(6, '0')
+    : '0x' + mantBits.toString(16).toUpperCase().padStart(13, '0');
+  const bitsHex = ieeeMode === 'f32'
+    ? '0x' + (bits >>> 0).toString(16).toUpperCase().padStart(8, '0')
+    : '0x' + bits.toString(16).toUpperCase().padStart(16, '0');
+
+  const catClass = {Normal:'cat-normal',Denormal:'cat-denormal',Zero:'cat-zero',Infinity:'cat-inf',NaN:'cat-nan'}[category];
+
+  let valueStr;
+  if (category === 'Zero') valueStr = signBit ? '-0' : '+0';
+  else if (category === 'Infinity') valueStr = signBit ? '-∞' : '+∞';
+  else if (category === 'NaN') valueStr = 'NaN';
+  else {
+    try { valueStr = fval.toPrecision(ieeeMode === 'f32' ? 9 : 17); } catch { valueStr = String(fval); }
+  }
+
+  info.innerHTML = `
+    <table>
+      <tr><td>Sign</td><td>
+        <span class="ieee-val">${signBit ? '−' : '+'}</span>
+        <span class="ieee-sub">bit = ${signBit}</span>
+      </td></tr>
+      <tr><td>Exponent</td><td>
+        <span class="ieee-val">raw ${expBits} (0x${expBits.toString(16).toUpperCase()}) → actual ${actualExp}</span>
+        <span class="ieee-sub">bias = ${expBias}, 2<sup>${actualExp}</sup></span>
+      </td></tr>
+      <tr><td>Mantissa</td><td>
+        <span class="ieee-val">${mantHex}</span>
+        <span class="ieee-sub">implied leading ${impliedLeading}</span>
+      </td></tr>
+      <tr><td>Category</td><td><span class="cat-badge ${catClass}">${category}</span></td></tr>
+      <tr><td>Value</td><td>
+        <span class="ieee-val">${valueStr}</span>
+        <span class="ieee-sub">${bitsHex}</span>
+      </td></tr>
+    </table>`;
+}
+
+let ieeeTimer = null;
+document.getElementById('ieeeIn').addEventListener('input', () => {
+  clearTimeout(ieeeTimer);
+  ieeeTimer = setTimeout(doIeee, 150);
+});
+
+function doIeee() {
+  const raw = document.getElementById('ieeeIn').value;
+  if (!raw.trim()) {
+    document.getElementById('ieeeBitMatrix').innerHTML = '';
+    document.getElementById('ieeeInfo').innerHTML = '';
+    return;
+  }
+  try {
+    const parsed = parseIeeeInput(raw);
+    if (!parsed) return;
+    renderIeeeBits(parsed.bits);
+    decodeIeee(parsed.bits, parsed.fval);
+  } catch (err) {
+    document.getElementById('ieeeInfo').innerHTML =
+      `<div style="color:var(--red);font-size:0.8rem;padding:8px">Invalid input</div>`;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   MEMORY / DATA SIZE
+   ═══════════════════════════════════════════════════════════════════ */
+let memMode = 'binary'; // 'binary' | 'decimal'
+
+const MEM_BIN = [
+  {l:'B',   f:1},
+  {l:'KiB', f:1024},
+  {l:'MiB', f:1024 ** 2},
+  {l:'GiB', f:1024 ** 3},
+  {l:'TiB', f:1024 ** 4},
+  {l:'PiB', f:1024 ** 5},
+];
+const MEM_DEC = [
+  {l:'B',  f:1},
+  {l:'KB', f:1e3},
+  {l:'MB', f:1e6},
+  {l:'GB', f:1e9},
+  {l:'TB', f:1e12},
+  {l:'PB', f:1e15},
+];
+
+function initMem() {
+  updateMemUnits();
+}
+
+function setMemMode(mode) {
+  memMode = mode;
+  document.getElementById('memBinBtn').classList.toggle('on', mode === 'binary');
+  document.getElementById('memDecBtn').classList.toggle('on', mode === 'decimal');
+  updateMemUnits();
+  memConvert();
+}
+
+function updateMemUnits() {
+  const sel   = document.getElementById('memUnit');
+  const units = memMode === 'binary' ? MEM_BIN : MEM_DEC;
+  const prev  = sel.value;
+  sel.innerHTML = '';
+  units.forEach(u => {
+    const opt = document.createElement('option');
+    opt.value = u.f;
+    opt.text  = u.l;
+    sel.appendChild(opt);
+  });
+  /* keep selection by position so switching modes stays on the same magnitude */
+  const idx = MEM_BIN.findIndex(u => String(u.f) === prev);
+  const decIdx = MEM_DEC.findIndex(u => String(u.f) === prev);
+  const keep = idx >= 0 ? idx : (decIdx >= 0 ? decIdx : 0);
+  sel.selectedIndex = keep;
+}
+
+function memConvert() {
+  const out  = document.getElementById('memOut');
+  const grid = document.getElementById('memGrid');
+  const raw  = document.getElementById('memIn').value.trim();
+  if (!raw) {
+    out.innerHTML = '<span style="color:var(--text3)">result appears here</span>';
+    grid.innerHTML = '';
+    return;
+  }
+
+  /* Parse decimal (possibly fractional) or hex integer */
+  let num;
+  if (/^0x[0-9a-fA-F]+$/.test(raw)) num = parseInt(raw, 16);
+  else num = parseFloat(raw);
+  if (!Number.isFinite(num) || num < 0) {
+    out.innerHTML = '<span style="color:var(--red)">invalid input</span>';
+    grid.innerHTML = '';
+    return;
+  }
+
+  const unitF = parseFloat(document.getElementById('memUnit').value);
+  const bytes = num * unitF;
+
+  /* Output line: exact byte count in dec + hex (integer part) */
+  const bInt    = Math.floor(bytes);
+  const exact   = Number.isSafeInteger(bInt);
+  const decStr  = exact ? bInt.toLocaleString('en-US') : fmt(bytes);
+  const hexStr  = exact ? '0x' + bInt.toString(16).toUpperCase() : '—';
+  out.innerHTML =
+    `<span class="out-chunk"><span class="out-tag">bytes</span>` +
+      `<span style="color:var(--text)">${decStr}</span></span>` +
+    `<span class="out-sep">·</span>` +
+    `<span class="out-chunk"><span class="out-tag">hex</span>` +
+      `<span style="color:var(--blue)">${hexStr}</span></span>`;
+
+  /* Grid: all units in the current mode */
+  const units = memMode === 'binary' ? MEM_BIN : MEM_DEC;
+  const curF  = unitF;
+  grid.innerHTML = '';
+  units.forEach(u => {
+    const cell = document.createElement('div');
+    cell.className = 'unit-cell' + (u.f === curF ? ' hi' : '');
+    cell.innerHTML =
+      `<div class="unit-cell-label">${u.l}</div>` +
+      `<div class="unit-cell-val">${fmt(bytes / u.f)}</div>`;
+    cell.addEventListener('click', () => copyCellVal(cell));
+    grid.appendChild(cell);
+  });
+}
+
+/* Run init after all declarations are processed */
+_init();
+
+/* Register service worker for offline / installable PWA support.
+   Only registers when served over http(s) — opening the file via file://
+   protocol is unsupported by service workers and would log a warning. */
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.protocol === 'http:')) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+</script>
+
+</body>
+</html>
